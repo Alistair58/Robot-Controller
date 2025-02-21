@@ -18,12 +18,19 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ActivityCompat
+import androidx.core.app.ActivityCompat.requestPermissions
+import androidx.core.app.ActivityCompat.startActivityForResult
+import java.util.Timer
+import kotlin.concurrent.schedule
 
 class BleService() : Service() {
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var bluetoothGatt:BluetoothGatt? = null
     private val binder = LocalBinder()
     private var connectionState = STATE_DISCONNECTED
+    val REQUEST_ENABLE_BT = 570
+
+
 
 
     private val bleGattCallback = object : BluetoothGattCallback(){
@@ -36,10 +43,16 @@ class BleService() : Service() {
                 //If we've connected we probably don't need to check we have Bluetooth enabled
                 println("Discovering services")
                 bluetoothGatt?.discoverServices()
-            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+            }
+            else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 println("Disconnected")
                 connectionState = STATE_DISCONNECTED
                 broadcastUpdate(ACTION_GATT_DISCONNECTED)
+            }
+            else if (newState == STATE_TIMEOUT){
+                println("Timeout")
+                connectionState = STATE_TIMEOUT
+                broadcastUpdate(ACTION_GATT_TIMEOUT)
             }
         }
         override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
@@ -58,8 +71,12 @@ class BleService() : Service() {
             "com.amhapps.robotcontroller.ACTION_GATT_DISCONNECTED"
         const val ACTION_GATT_SERVICES_DISCOVERED =
             "com.amhapps.robotcontroller.ACTION_GATT_SERVICES_DISCOVERED"
+        const val ACTION_GATT_TIMEOUT =
+            "com.amhapps.robotcontroller.ACTION_GATT_TIMEOUT"
         private const val STATE_DISCONNECTED = 0
         private const val STATE_CONNECTED = 2
+        private const val STATE_TIMEOUT = -1
+
 
     }
 
@@ -78,7 +95,6 @@ class BleService() : Service() {
                     val foundCharacteristicUUID = gattCharacteristic?.uuid.toString()
                     println(foundCharacteristicUUID)
                     if(foundCharacteristicUUID==gattCharacteristicUUID){
-                        println("Found characteristic")
                         return gattCharacteristic
                     }
                 }
@@ -101,53 +117,58 @@ class BleService() : Service() {
             return this@BleService
         }
     }
-    fun initialize(): Boolean {
+    @SuppressLint("MissingPermission")
+    fun initialize(activity: Activity,onStatusChange:(Int)->Unit): Boolean {
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
         if (bluetoothAdapter == null) {
-            println("Unable to obtain a BluetoothAdapter.")
+            onStatusChange(MainActivity.BLUETOOTH_ERROR)
+            return false
+        }
+        if(! bluetoothAdapter!!.isEnabled){
+            val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+            startActivityForResult(activity,enableBtIntent,REQUEST_ENABLE_BT,null)
+            //Don't change status as a pop up will deal with this
             return false
         }
         return true
     }
 
-    fun connect(address: String,activity: Activity): Boolean {
+    fun connect(address: String,activity: Activity,onStatusChange:(Int)->Unit) {
         bluetoothAdapter?.let { adapter ->
             try {
                 val device = adapter.getRemoteDevice(address)
-                println("Got device with addr $address")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ActivityCompat.checkSelfPermission(
                         this,
                         Manifest.permission.BLUETOOTH_CONNECT
                     ) != PackageManager.PERMISSION_GRANTED
                 ) {
-                    ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.BLUETOOTH_CONNECT),561)
-                    return false //TODO Handle
+                    requestPermissions(activity, arrayOf(Manifest.permission.BLUETOOTH_CONNECT),561)
+                    connect(address,activity,onStatusChange)
+                    //Not suitable for actual users but suitable for me
                 }
                 bluetoothGatt = device.connectGatt(this,false,bleGattCallback)
-                println("Connected")
-                return true
+                Timer("connectionTimeout",false).schedule(10000){
+                    //if no connection after 10s cancel
+                    if(connectionState != STATE_CONNECTED){
+                        bleGattCallback.onConnectionStateChange(bluetoothGatt,BluetoothGatt.GATT_FAILURE,
+                            STATE_TIMEOUT)
+                    }
+
+
+                }
             } catch (exception: IllegalArgumentException) {
-                println("Device not found with provided address.")
-                return false
+                //If the address isn't a mac address
+                onStatusChange(MainActivity.BLUETOOTH_ERROR)
             }
         } ?: run {
-            println("BluetoothAdapter not initialized")
-            return false
+            onStatusChange(MainActivity.BLUETOOTH_ERROR)
         }
     }
 
     @SuppressLint("MissingPermission")
     fun writeCharacteristic(characteristic: BluetoothGattCharacteristic?) {
-        if(null == characteristic){
-            println("Null characteristic")
-            return
-        }
-        bluetoothGatt?.let { gatt ->
-            //The deprecated stuff is used as the newer stuff requires API 33 (Android 13)
-            println("Sent write characteristic")
-            gatt.writeCharacteristic(characteristic)
-            //Doesn't seem to offer a no_response option
-        } ?: run {
+        if(null == characteristic) return
+        bluetoothGatt?.writeCharacteristic(characteristic) ?: run {
             println("BluetoothGatt not initialized")
         }
     }

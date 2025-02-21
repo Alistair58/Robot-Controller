@@ -1,4 +1,4 @@
-package com.amhapps.robotcontroller.ui.theme
+package com.amhapps.robotcontroller
 
 import android.bluetooth.BluetoothGattCharacteristic
 import androidx.compose.foundation.background
@@ -18,10 +18,8 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,9 +28,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import com.amhapps.robotcontroller.BleService
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlin.math.round
 
 //
@@ -61,13 +57,8 @@ class Controller(private val bluetoothService: BleService?,private val motorChar
     }
 
     private fun sendControls(){
-        if(null == motorCharacteristic){
-            println("Null")
-            return
-        }
-        println("Sent L:$leftThrottle R:$rightThrottle")
+        if(null == motorCharacteristic) return
         motorCharacteristic.value = byteArrayOf(0xa1.toByte(),leftThrottle.toByte(),rightThrottle.toByte())
-
         bluetoothService?.writeCharacteristic(motorCharacteristic)
     }
 
