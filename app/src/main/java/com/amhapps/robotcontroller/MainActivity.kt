@@ -44,16 +44,18 @@ class MainActivity : ComponentActivity() {
     private var status by mutableStateOf(0)
     
     private val activity:Activity = this
-    private val motorServiceUUID = "94f493c8-c579-41c2-87ac-e12c02455864"
+    private val robotServiceUUID = "94f493c8-c579-41c2-87ac-e12c02455864"
     private val motorCharacteristicUUID = "94f493ca-c579-41c2-87ac-e12c02455864"
+    private val autoModeCharacteristicUUID = "94f493cc-c579-41c2-87ac-e12c02455864"
     private var motorCharacteristic:BluetoothGattCharacteristic? by mutableStateOf( null)
-    
+    private var autoModeCharacteristic:BluetoothGattCharacteristic? by mutableStateOf( null)
     companion object{
         val CONNECTED = 1
         val CONNECTING = 0
         val DISCONNECTED = -1
         val ROBOT_NOT_ON = -2
         val BLUETOOTH_ERROR = -3
+        val AUTO_MODE = 2
     }
 
     private val gattUpdateReceiver: BroadcastReceiver = object : BroadcastReceiver() {
@@ -61,22 +63,36 @@ class MainActivity : ComponentActivity() {
             when (intent.action) {
                 BleService.ACTION_GATT_CONNECTED -> {
                     println("Received gatt connected")
-                    status = CONNECTED
+                    //Only change the status after we have the services
                 }
                 BleService.ACTION_GATT_DISCONNECTED -> {
                     println("Received gatt disconnected")
                     status = DISCONNECTED
                 }
                 BleService.ACTION_GATT_SERVICES_DISCOVERED -> {
-                    motorCharacteristic = bluetoothService?.getMotorCharacteristic(
+                    motorCharacteristic = bluetoothService?.getCharacteristic(
                         bluetoothService?.getSupportedGattServices(),
-                        motorServiceUUID,
+                        robotServiceUUID,
                         motorCharacteristicUUID
                     )
+                    autoModeCharacteristic = bluetoothService?.getCharacteristic(
+                        bluetoothService?.getSupportedGattServices(),
+                        robotServiceUUID,
+                        autoModeCharacteristicUUID
+                    )
+                    status = CONNECTED
                     //Will cause a recomposition and so controls will be shown
                 }
                 BleService.ACTION_GATT_TIMEOUT -> {
                     status = ROBOT_NOT_ON
+                }
+                BleService.ACTION_GATT_AUTO_MODE_CONFIRMED -> {
+                    println("Auto mode confirmed")
+                    status = AUTO_MODE
+                }
+                BleService.ACTION_GATT_MANUAL_MODE_CONFIRMED -> {
+                    println("Manual mode confirmed")
+                    status = CONNECTED
                 }
             }
         }
@@ -92,6 +108,8 @@ class MainActivity : ComponentActivity() {
     }
 
 
+
+
     override fun onPause() {
         super.onPause()
         unregisterReceiver(gattUpdateReceiver)
@@ -103,6 +121,8 @@ class MainActivity : ComponentActivity() {
             addAction(BleService.ACTION_GATT_DISCONNECTED)
             addAction(BleService.ACTION_GATT_SERVICES_DISCOVERED)
             addAction(BleService.ACTION_GATT_TIMEOUT)
+            addAction(BleService.ACTION_GATT_AUTO_MODE_CONFIRMED)
+            addAction(BleService.ACTION_GATT_MANUAL_MODE_CONFIRMED)
         }
     }
 
@@ -164,15 +184,16 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             RobotControllerTheme {
-                App(status,motorCharacteristic)
+                App(status,motorCharacteristic,autoModeCharacteristic)
             }
         }
     }
 
     @Composable
-    fun App(status:Int,motorCharacteristic: BluetoothGattCharacteristic?) {
+    fun App(status:Int,motorCharacteristic: BluetoothGattCharacteristic?,autoModeCharacteristic: BluetoothGattCharacteristic?) {
         val onStatusChange: (Int) -> Unit = { this.status = it }
         //this. doesn't work inside the composable
+        println("Recomposing")
         when (status) {
              DISCONNECTED-> {
                 LandscapeColumn {
@@ -180,15 +201,21 @@ class MainActivity : ComponentActivity() {
                     Spacer(modifier = Modifier.height(30.dp))
                     ConnectButton(onStatusChange)
                 }
-            }
-
+             }
             CONNECTED-> {
-                val controller = Controller(bluetoothService, motorCharacteristic)
+                val controller = Controller(bluetoothService, motorCharacteristic,autoModeCharacteristic)
                 controller.RobotControls()
             }
             CONNECTING -> {
                 LandscapeColumn {
                     Text("Connecting", fontSize = 40.sp)
+                }
+            }
+            AUTO_MODE->{
+                LandscapeColumn {
+                    Text("Auto mode", fontSize = 40.sp)
+                    ExitAutoModeButton()
+                    DisconnectButton(bluetoothService = bluetoothService)
                 }
             }
             ROBOT_NOT_ON-> {
@@ -228,22 +255,57 @@ class MainActivity : ComponentActivity() {
             )
         }
     }
+
     @Composable
-    fun LandscapeColumn(content: @Composable() () -> Unit) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+    private fun ExitAutoModeButton(){
+        Button(
+            onClick = {
+                println("Clicked")
+                println(autoModeCharacteristic==null)
+                if(null != autoModeCharacteristic){
+                    autoModeCharacteristic!!.value = byteArrayOf(0xaa.toByte(),0)
+                    bluetoothService?.writeCharacteristic(autoModeCharacteristic)
+                    println("Written")
+                }
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+            shape = RoundedCornerShape(5.dp),
+            modifier = Modifier.padding(10.dp,5.dp)
         ) {
-            content()
+            Text(text="Exit Auto Mode", fontSize = 20.sp,color = Color.White,
+                modifier = Modifier.padding(5.dp))
         }
+
     }
 
 }
 
+@Composable
+fun LandscapeColumn(content: @Composable() () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        content()
+    }
+}
 
 
 
+@Composable
+fun DisconnectButton(bluetoothService: BleService?){
+    Button(
+        onClick = {bluetoothService?.disconnect()}, //The main app will sort it out and show the disconnected page
+        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+        shape = RoundedCornerShape(5.dp),
+        modifier = Modifier.padding(10.dp,5.dp)
+    ) {
+        Text(text="Disconnect", fontSize = 20.sp,color = Color.White,
+            modifier = Modifier.padding(5.dp))
+    }
+
+}
 
 
 

@@ -29,7 +29,7 @@ class BleService() : Service() {
     private val binder = LocalBinder()
     private var connectionState = STATE_DISCONNECTED
     val REQUEST_ENABLE_BT = 570
-
+    private val autoModeCharacteristicUUID = "94f493cc-c579-41c2-87ac-e12c02455864"
 
 
 
@@ -63,6 +63,31 @@ class BleService() : Service() {
                 println("onServicesDiscovered received: $status")
             }
         }
+        override fun onCharacteristicWrite(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int
+        ) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                println("BLE write successful to ${characteristic.uuid}")
+                if(characteristic.uuid.toString()==autoModeCharacteristicUUID){
+                    println("Characteristic value: ${characteristic.value.contentToString()}")
+                    if(characteristic.value.size>1 && characteristic.value[1]==0.toByte()){
+                        //Disabled auto mode
+                        broadcastUpdate(ACTION_GATT_MANUAL_MODE_CONFIRMED)
+
+                    }
+                    else if(characteristic.value.size>1 && characteristic.value[1]==1.toByte()){
+                        println("Sending auto mode confirmed")
+                        broadcastUpdate(ACTION_GATT_AUTO_MODE_CONFIRMED)
+                    }
+
+                }
+                // You can check characteristic.value here if needed
+            } else {
+                println("BLE write failed with status $status")
+            }
+        }
     }
     companion object {
         const val ACTION_GATT_CONNECTED =
@@ -73,6 +98,10 @@ class BleService() : Service() {
             "com.amhapps.robotcontroller.ACTION_GATT_SERVICES_DISCOVERED"
         const val ACTION_GATT_TIMEOUT =
             "com.amhapps.robotcontroller.ACTION_GATT_TIMEOUT"
+        const val ACTION_GATT_AUTO_MODE_CONFIRMED =
+            "com.amhapps.robotcontroller.ACTION_GATT_AUTO_MODE_CONFIRMED"
+        const val ACTION_GATT_MANUAL_MODE_CONFIRMED =
+            "com.amhapps.robotcontroller.ACTION_GATT_MANUAL_MODE_CONFIRMED"
         private const val STATE_DISCONNECTED = 0
         private const val STATE_CONNECTED = 2
         private const val STATE_TIMEOUT = -1
@@ -84,7 +113,7 @@ class BleService() : Service() {
         return bluetoothGatt?.services
     }
 
-    fun getMotorCharacteristic(gattServices:List<BluetoothGattService?>?,gattServiceUUID:String,gattCharacteristicUUID:String):BluetoothGattCharacteristic?{
+    fun getCharacteristic(gattServices:List<BluetoothGattService?>?,gattServiceUUID:String,gattCharacteristicUUID:String):BluetoothGattCharacteristic?{
         if(null == gattServices) return null
         gattServices.forEach{ gattService ->
             val foundServiceUUID = gattService?.uuid.toString()
@@ -102,6 +131,7 @@ class BleService() : Service() {
         }
         return null
     }
+
 
     private fun broadcastUpdate(action: String) {
         val intent = Intent(action)
@@ -180,7 +210,7 @@ class BleService() : Service() {
 
     private fun close() { //Avoids draining the device battery
         bluetoothGatt?.let { gatt ->
-            if (ActivityCompat.checkSelfPermission(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ActivityCompat.checkSelfPermission(
                     this,
                     Manifest.permission.BLUETOOTH_CONNECT
                 ) != PackageManager.PERMISSION_GRANTED
@@ -188,6 +218,24 @@ class BleService() : Service() {
                 return
             }
             gatt.close()
+            bluetoothGatt = null
+        }
+    }
+
+   fun disconnect(){
+       println("Trying to disconnect ${bluetoothGatt==null}")
+       bluetoothGatt?.let { gatt ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ActivityCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.BLUETOOTH_CONNECT
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                println("No permission")
+                return
+            }
+            println("Disconnecting")
+            gatt.disconnect()
+            println("Disconnected")
             bluetoothGatt = null
         }
     }
