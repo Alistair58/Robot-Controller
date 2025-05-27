@@ -52,8 +52,8 @@ class Controller(private val bluetoothService: BleService?,private val motorChar
             Row(horizontalArrangement = Arrangement.Center,
                 modifier = Modifier.fillMaxHeight(0.8f).fillMaxWidth()
             ){
-                MotorControlSlider({leftThrottle = it })
-                MotorControlSlider({rightThrottle = it })
+                MotorControlSlider({leftThrottle = it})
+                MotorControlSlider({rightThrottle = it})
             }
             Row(horizontalArrangement = Arrangement.Center,
                 modifier = Modifier.fillMaxSize()
@@ -85,7 +85,6 @@ class Controller(private val bluetoothService: BleService?,private val motorChar
     @Composable
     private fun MotorControlSlider(onThrottleChange:(Int)->Unit){
         var throttle by remember { mutableStateOf(50) } //Works better with the local variable
-        onThrottleChange(50) //Very important
         Column(modifier = Modifier.padding(100.dp,10.dp)){
             val interactionSource = remember { MutableInteractionSource() }
             LaunchedEffect(interactionSource) { //Launch a new thread when an interaction occurs
@@ -119,7 +118,7 @@ class Controller(private val bluetoothService: BleService?,private val motorChar
                         }
                     },
                 value = throttle.toFloat()/100 ,
-                onValueChange = {onThrottleChange(round(it*100).toInt()) ;throttle = round(it*100).toInt()},
+                onValueChange = {onThrottleChange(round(it*100).toInt()); throttle = round(it*100).toInt()},
                 colors = SliderDefaults.colors(
                     thumbColor = Color.Red,
                     activeTrackColor = Color.Red,
@@ -142,12 +141,9 @@ class Controller(private val bluetoothService: BleService?,private val motorChar
     private fun AutoModeButton(){
         Button(
             onClick = {
-                println("Clicked")
-                println(autoModeCharacteristic==null)
                 if(null != autoModeCharacteristic){
                     autoModeCharacteristic.value = byteArrayOf(0xaa.toByte(),1)
                     bluetoothService?.writeCharacteristic(autoModeCharacteristic)
-                    println("Written")
                 }
             },
             colors = ButtonDefaults.buttonColors(containerColor = Color.Green),

@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -193,7 +192,6 @@ class MainActivity : ComponentActivity() {
     fun App(status:Int,motorCharacteristic: BluetoothGattCharacteristic?,autoModeCharacteristic: BluetoothGattCharacteristic?) {
         val onStatusChange: (Int) -> Unit = { this.status = it }
         //this. doesn't work inside the composable
-        println("Recomposing")
         when (status) {
              DISCONNECTED-> {
                 LandscapeColumn {
@@ -260,12 +258,10 @@ class MainActivity : ComponentActivity() {
     private fun ExitAutoModeButton(){
         Button(
             onClick = {
-                println("Clicked")
                 println(autoModeCharacteristic==null)
                 if(null != autoModeCharacteristic){
                     autoModeCharacteristic!!.value = byteArrayOf(0xaa.toByte(),0)
                     bluetoothService?.writeCharacteristic(autoModeCharacteristic)
-                    println("Written")
                 }
             },
             colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
