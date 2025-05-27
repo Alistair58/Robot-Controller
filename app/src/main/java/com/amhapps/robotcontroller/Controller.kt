@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothGattCharacteristic
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -89,7 +90,10 @@ class Controller(private val bluetoothService: BleService?,private val motorChar
             val interactionSource = remember { MutableInteractionSource() }
             LaunchedEffect(interactionSource) { //Launch a new thread when an interaction occurs
                 interactionSource.interactions.collect { interaction ->
-                    if(interaction is DragInteraction.Stop){ //When the user lets go, reset it, like a normal controller
+                    if(interaction is DragInteraction.Stop ||
+                        interaction is PressInteraction.Release ||
+                        interaction is DragInteraction.Cancel ||
+                        interaction is PressInteraction.Cancel){ //When the user lets go, reset it, like a normal controller
                         onThrottleChange(50)
                         throttle = 50
                     }
