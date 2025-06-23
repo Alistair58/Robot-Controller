@@ -15,6 +15,7 @@ import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -22,16 +23,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
@@ -41,13 +46,14 @@ class MainActivity : ComponentActivity() {
     private var bluetoothService : BleService? = null
     private val robotAddress:String = "2C:CF:67:BD:C4:A2"
     private var status by mutableStateOf(0)
-    
     private val activity:Activity = this
     private val robotServiceUUID = "94f493c8-c579-41c2-87ac-e12c02455864"
     private val motorCharacteristicUUID = "94f493ca-c579-41c2-87ac-e12c02455864"
     private val autoModeCharacteristicUUID = "94f493cc-c579-41c2-87ac-e12c02455864"
+    private val stuckCharacteristicUUID = "94f493cf-c579-41c2-87ac-e12c02455864"
     private var motorCharacteristic:BluetoothGattCharacteristic? by mutableStateOf( null)
     private var autoModeCharacteristic:BluetoothGattCharacteristic? by mutableStateOf( null)
+    private var stuckCharacteristic:BluetoothGattCharacteristic? by mutableStateOf( null)
     companion object{
         val CONNECTED = 1
         val CONNECTING = 0
@@ -55,6 +61,7 @@ class MainActivity : ComponentActivity() {
         val ROBOT_NOT_ON = -2
         val BLUETOOTH_ERROR = -3
         val AUTO_MODE = 2
+        val ROBOT_STUCK = -4
     }
 
     private val gattUpdateReceiver: BroadcastReceiver = object : BroadcastReceiver() {
@@ -79,6 +86,14 @@ class MainActivity : ComponentActivity() {
                         robotServiceUUID,
                         autoModeCharacteristicUUID
                     )
+                    stuckCharacteristic = bluetoothService?.getCharacteristic(
+                        bluetoothService?.getSupportedGattServices(),
+                        robotServiceUUID,
+                        stuckCharacteristicUUID
+                    )
+                    if(stuckCharacteristic!=null){
+                        bluetoothService?.setCharacteristicNotification(stuckCharacteristic!!,true)
+                    }
                     status = CONNECTED
                     //Will cause a recomposition and so controls will be shown
                 }
@@ -92,6 +107,10 @@ class MainActivity : ComponentActivity() {
                 BleService.ACTION_GATT_MANUAL_MODE_CONFIRMED -> {
                     println("Manual mode confirmed")
                     status = CONNECTED
+                }
+                BleService.ACTION_GATT_ROBOT_STUCK -> {
+                    println("Robot stuck")
+                    status = ROBOT_STUCK
                 }
             }
         }
@@ -122,6 +141,7 @@ class MainActivity : ComponentActivity() {
             addAction(BleService.ACTION_GATT_TIMEOUT)
             addAction(BleService.ACTION_GATT_AUTO_MODE_CONFIRMED)
             addAction(BleService.ACTION_GATT_MANUAL_MODE_CONFIRMED)
+            addAction(BleService.ACTION_GATT_ROBOT_STUCK)
         }
     }
 
@@ -132,6 +152,7 @@ class MainActivity : ComponentActivity() {
         ) {
             println("Service connection")
             bluetoothService = (service as BleService.LocalBinder).getService()
+
             bluetoothService?.let { bluetooth ->
                 if(!bluetooth.initialize(activity,{status = it})){
                     println("Unable to initialise Bluetooth")
@@ -188,6 +209,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun App(status:Int,motorCharacteristic: BluetoothGattCharacteristic?,autoModeCharacteristic: BluetoothGattCharacteristic?) {
         val onStatusChange: (Int) -> Unit = { this.status = it }
@@ -200,9 +222,39 @@ class MainActivity : ComponentActivity() {
                     ConnectButton(onStatusChange)
                 }
              }
-            CONNECTED-> {
-                val controller = Controller(bluetoothService, motorCharacteristic,autoModeCharacteristic)
+            CONNECTED, ROBOT_STUCK-> {
+                var leftThrottle = remember { mutableStateOf(50) }
+                var rightThrottle = remember { mutableStateOf(50) }
+                val controller = Controller(
+                    bluetoothService,
+                    motorCharacteristic,
+                    autoModeCharacteristic,
+                    leftThrottle,
+                    rightThrottle,
+                    {leftThrottle.value = it},
+                    {rightThrottle.value = it})
                 controller.RobotControls()
+                if(status==ROBOT_STUCK){
+                    BasicAlertDialog(
+                        onDismissRequest = { onStatusChange(CONNECTED) },
+                        modifier = Modifier.background(color=Color.White),
+                    ){
+                        Column(modifier = Modifier.padding(20.dp)){
+                            Text(
+                                text="Robot is stuck",
+                                color=Color.Red,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 34.sp
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Text(
+                                text="If the robot was in Auto Mode, then manual control has resumed",
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+                }
+
             }
             CONNECTING -> {
                 LandscapeColumn {

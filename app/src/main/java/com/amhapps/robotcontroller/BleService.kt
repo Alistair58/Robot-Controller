@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothAdapter.STATE_DISCONNECTED
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothProfile
 import android.content.Intent
@@ -21,6 +22,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.ActivityCompat.requestPermissions
 import androidx.core.app.ActivityCompat.startActivityForResult
 import java.util.Timer
+import java.util.UUID
 import kotlin.concurrent.schedule
 
 class BleService() : Service() {
@@ -30,8 +32,8 @@ class BleService() : Service() {
     private var connectionState = STATE_DISCONNECTED
     val REQUEST_ENABLE_BT = 570
     private val autoModeCharacteristicUUID = "94f493cc-c579-41c2-87ac-e12c02455864"
-
-
+    private val stuckCharacteristicUUID = "94f493cf-c579-41c2-87ac-e12c02455864"
+    private val robotStuckPacket = 0xAF.toByte()
 
     private val bleGattCallback = object : BluetoothGattCallback(){
         @SuppressLint("MissingPermission")
@@ -69,7 +71,6 @@ class BleService() : Service() {
             status: Int
         ) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                println("BLE write successful to ${characteristic.uuid}")
                 if(characteristic.uuid.toString()==autoModeCharacteristicUUID){
                     println("Characteristic value: ${characteristic.value.contentToString()}")
                     if(characteristic.value.size>1 && characteristic.value[1]==0.toByte()){
@@ -88,6 +89,23 @@ class BleService() : Service() {
                 println("BLE write failed with status $status")
             }
         }
+        @Deprecated("Deprecated in Java")
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic
+        ) {
+            println("Characteristic changed ${characteristic.uuid.toString()} ${characteristic.value.contentToString()}")
+            if(characteristic.uuid.toString() == stuckCharacteristicUUID){
+                if(characteristic.value.size>=2 &&
+                    characteristic.value[0]==robotStuckPacket &&
+                    characteristic.value[1].toInt()==1) { //Robot sends uint8_ts and so these can be negative for a Kotlin byte
+                    println("Broadcasting stuck")
+                    broadcastUpdate(ACTION_GATT_ROBOT_STUCK)
+
+                }
+            }
+
+        }
     }
     companion object {
         const val ACTION_GATT_CONNECTED =
@@ -102,6 +120,8 @@ class BleService() : Service() {
             "com.amhapps.robotcontroller.ACTION_GATT_AUTO_MODE_CONFIRMED"
         const val ACTION_GATT_MANUAL_MODE_CONFIRMED =
             "com.amhapps.robotcontroller.ACTION_GATT_MANUAL_MODE_CONFIRMED"
+        const val ACTION_GATT_ROBOT_STUCK =
+            "com.amhapps.robotcontroller.ACTION_GATT_ROBOT_STUCK"
         private const val STATE_DISCONNECTED = 0
         private const val STATE_CONNECTED = 2
         private const val STATE_TIMEOUT = -1
@@ -237,6 +257,33 @@ class BleService() : Service() {
             gatt.disconnect()
             println("Disconnected")
             bluetoothGatt = null
+        }
+    }
+
+    fun setCharacteristicNotification(
+        characteristic: BluetoothGattCharacteristic,
+        enabled: Boolean
+    ) {
+        println("settingCharacteristicNotification")
+        bluetoothGatt?.let { gatt ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ActivityCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.BLUETOOTH_CONNECT
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                println("No permission")
+                return
+            }
+            gatt.setCharacteristicNotification(characteristic, enabled)
+
+            if (this.stuckCharacteristicUUID == characteristic.uuid.toString()) {
+                val cccd = "00002902-0000-1000-8000-00805f9b34fb"
+                val descriptor = characteristic.getDescriptor(UUID.fromString(cccd))
+                descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                gatt.writeDescriptor(descriptor)
+            }
+        } ?: run {
+            println("BluetoothGatt not initialized")
         }
     }
 }

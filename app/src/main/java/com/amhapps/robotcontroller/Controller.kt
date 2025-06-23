@@ -1,6 +1,7 @@
 package com.amhapps.robotcontroller
 
 import android.bluetooth.BluetoothGattCharacteristic
+import android.util.MutableInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,6 +25,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,9 +42,13 @@ import kotlinx.coroutines.delay
 import kotlin.math.round
 
 //
-class Controller(private val bluetoothService: BleService?,private val motorCharacteristic: BluetoothGattCharacteristic?,private val autoModeCharacteristic: BluetoothGattCharacteristic?) {
-    private var leftThrottle = 50
-    private var rightThrottle = 50
+class Controller(private val bluetoothService: BleService?,
+                 private val motorCharacteristic: BluetoothGattCharacteristic?,
+                 private val autoModeCharacteristic: BluetoothGattCharacteristic?,
+                 private val leftThrottle: MutableState<Int>,
+                 private val rightThrottle: MutableState<Int>,
+                 private val onLeftThrottleChange: (Int) -> Unit,
+                 private val onRightThrottleChange: (Int) -> Unit) {
     private val controllerDelay = 50L
     @Composable
     fun RobotControls(){
@@ -53,8 +59,8 @@ class Controller(private val bluetoothService: BleService?,private val motorChar
             Row(horizontalArrangement = Arrangement.Center,
                 modifier = Modifier.fillMaxHeight(0.8f).fillMaxWidth()
             ){
-                MotorControlSlider({leftThrottle = it})
-                MotorControlSlider({rightThrottle = it})
+                MotorControlSlider(onLeftThrottleChange)
+                MotorControlSlider(onRightThrottleChange)
             }
             Row(horizontalArrangement = Arrangement.Center,
                 modifier = Modifier.fillMaxSize()
@@ -78,13 +84,14 @@ class Controller(private val bluetoothService: BleService?,private val motorChar
 
     private fun sendControls(){
         if(null == motorCharacteristic) return
-        motorCharacteristic.value = byteArrayOf(0xa1.toByte(),leftThrottle.toByte(),rightThrottle.toByte())
+        motorCharacteristic.value = byteArrayOf(0xa1.toByte(),leftThrottle.value.toByte(),rightThrottle.value.toByte())
         bluetoothService?.writeCharacteristic(motorCharacteristic)
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     private fun MotorControlSlider(onThrottleChange:(Int)->Unit){
+        println("Redrawing")
         var throttle by remember { mutableStateOf(50) } //Works better with the local variable
         Column(modifier = Modifier.padding(100.dp,10.dp)){
             val interactionSource = remember { MutableInteractionSource() }
@@ -94,6 +101,7 @@ class Controller(private val bluetoothService: BleService?,private val motorChar
                         interaction is PressInteraction.Release ||
                         interaction is DragInteraction.Cancel ||
                         interaction is PressInteraction.Cancel){ //When the user lets go, reset it, like a normal controller
+                        println("Cancelled (50)")
                         onThrottleChange(50)
                         throttle = 50
                     }
