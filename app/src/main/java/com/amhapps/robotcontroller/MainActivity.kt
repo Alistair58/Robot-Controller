@@ -13,15 +13,20 @@ import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
@@ -36,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,10 +56,12 @@ class MainActivity : ComponentActivity() {
     private val robotServiceUUID = "94f493c8-c579-41c2-87ac-e12c02455864"
     private val motorCharacteristicUUID = "94f493ca-c579-41c2-87ac-e12c02455864"
     private val autoModeCharacteristicUUID = "94f493cc-c579-41c2-87ac-e12c02455864"
-    private val stuckCharacteristicUUID = "94f493cf-c579-41c2-87ac-e12c02455864"
+    private val stuckCharacteristicUUID = "94f493ce-c579-41c2-87ac-e12c02455864"
+    private val turretCalibrationCharacteristicUUID = "94f493d0-c579-41c2-87ac-e12c02455864"
     private var motorCharacteristic:BluetoothGattCharacteristic? by mutableStateOf( null)
     private var autoModeCharacteristic:BluetoothGattCharacteristic? by mutableStateOf( null)
     private var stuckCharacteristic:BluetoothGattCharacteristic? by mutableStateOf( null)
+    private var turretCalibrationCharacteristic:BluetoothGattCharacteristic? by mutableStateOf( null)
     companion object{
         val CONNECTED = 1
         val CONNECTING = 0
@@ -62,8 +70,29 @@ class MainActivity : ComponentActivity() {
         val BLUETOOTH_ERROR = -3
         val AUTO_MODE = 2
         val ROBOT_STUCK = -4
+        val CALIBRATING_TURRET = 3
+        val TURRET_CALIBRATED = 4
+        val TURRET_CALIBRATION_FAILURE = -5
+        val SHOW_CALIBRATION_TUTORIAL = 5
+        val VALID_STATUSES = intArrayOf(
+            CONNECTED,
+            CONNECTING, 
+            DISCONNECTED, 
+            ROBOT_NOT_ON,
+            BLUETOOTH_ERROR,
+            AUTO_MODE,
+            ROBOT_STUCK,
+            CALIBRATING_TURRET,
+            TURRET_CALIBRATED,
+            TURRET_CALIBRATION_FAILURE)
     }
-
+    fun changeStatus(newStatus:Int){
+        println("Changing status to $newStatus")
+        if(newStatus in VALID_STATUSES){
+            println("Done")
+            status = newStatus
+        }
+    }
     private val gattUpdateReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -94,6 +123,14 @@ class MainActivity : ComponentActivity() {
                     if(stuckCharacteristic!=null){
                         bluetoothService?.setCharacteristicNotification(stuckCharacteristic!!,true)
                     }
+                    turretCalibrationCharacteristic = bluetoothService?.getCharacteristic(
+                        bluetoothService?.getSupportedGattServices(),
+                        robotServiceUUID,
+                        turretCalibrationCharacteristicUUID
+                    )
+                    if(turretCalibrationCharacteristic!=null){
+                        bluetoothService?.setCharacteristicNotification(turretCalibrationCharacteristic!!,true)
+                    }
                     status = CONNECTED
                     //Will cause a recomposition and so controls will be shown
                 }
@@ -111,6 +148,18 @@ class MainActivity : ComponentActivity() {
                 BleService.ACTION_GATT_ROBOT_STUCK -> {
                     println("Robot stuck")
                     status = ROBOT_STUCK
+                }
+                BleService.ACTION_GATT_TURRET_CALIBRATION -> {
+                    println("Calibrating turret")
+                    status = CALIBRATING_TURRET
+                }
+                BleService.ACTION_GATT_TURRET_CALIBRATED -> {
+                    println("Turret calibrated")
+                    status = TURRET_CALIBRATED
+                }
+                BleService.ACTION_GATT_TURRET_CALIBRATION_FAILURE -> {
+                    println("Could not calibrate turret")
+                    status = TURRET_CALIBRATION_FAILURE
                 }
             }
         }
@@ -142,6 +191,9 @@ class MainActivity : ComponentActivity() {
             addAction(BleService.ACTION_GATT_AUTO_MODE_CONFIRMED)
             addAction(BleService.ACTION_GATT_MANUAL_MODE_CONFIRMED)
             addAction(BleService.ACTION_GATT_ROBOT_STUCK)
+            addAction(BleService.ACTION_GATT_TURRET_CALIBRATION)
+            addAction(BleService.ACTION_GATT_TURRET_CALIBRATION_FAILURE)
+            addAction(BleService.ACTION_GATT_TURRET_CALIBRATED)
         }
     }
 
@@ -222,7 +274,7 @@ class MainActivity : ComponentActivity() {
                     ConnectButton(onStatusChange)
                 }
              }
-            CONNECTED, ROBOT_STUCK-> {
+             CONNECTED, ROBOT_STUCK, TURRET_CALIBRATED, TURRET_CALIBRATION_FAILURE-> {
                 var leftThrottle = remember { mutableStateOf(50) }
                 var rightThrottle = remember { mutableStateOf(50) }
                 val controller = Controller(
@@ -232,29 +284,113 @@ class MainActivity : ComponentActivity() {
                     leftThrottle,
                     rightThrottle,
                     {leftThrottle.value = it},
-                    {rightThrottle.value = it})
+                    {rightThrottle.value = it},
+                    onStatusChange)
                 controller.RobotControls()
-                if(status==ROBOT_STUCK){
-                    BasicAlertDialog(
-                        onDismissRequest = { onStatusChange(CONNECTED) },
-                        modifier = Modifier.background(color=Color.White),
-                    ){
-                        Column(modifier = Modifier.padding(20.dp)){
-                            Text(
-                                text="Robot is stuck",
-                                color=Color.Red,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 34.sp
-                            )
-                            Spacer(modifier = Modifier.height(20.dp))
-                            Text(
-                                text="If the robot was in Auto Mode, then manual control has resumed",
-                                fontSize = 16.sp
-                            )
+                when(status) {
+                    ROBOT_STUCK -> {
+                        BasicAlertDialog(
+                            onDismissRequest = { onStatusChange(CONNECTED) },
+                            modifier = Modifier.background(color = Color.White),
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text(
+                                    text = "Robot is stuck",
+                                    color = Color.Red,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 34.sp
+                                )
+                                Spacer(modifier = Modifier.height(20.dp))
+                                Text(
+                                    text = "If the robot was in Auto Mode, then manual control has resumed",
+                                    fontSize = 16.sp
+                                )
+                            }
+                        }
+                    }
+                    TURRET_CALIBRATED -> {
+                        BasicAlertDialog(
+                            onDismissRequest = { onStatusChange(CONNECTED) },
+                            modifier = Modifier.background(color = Color.White),
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text(
+                                    text = "Turret Calibrated Successfully",
+                                    color = Color.Green,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 34.sp
+                                )
+                            }
+                        }
+                    }
+                    TURRET_CALIBRATION_FAILURE -> {
+                        BasicAlertDialog(
+                            onDismissRequest = { onStatusChange(CONNECTED) },
+                            modifier = Modifier.background(color = Color.White),
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text(
+                                    text = "Turret Calibration Failed",
+                                    color = Color.Red,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 34.sp
+                                )
+                                Spacer(modifier = Modifier.height(20.dp))
+                                Text(
+                                    text = "The orientation of the turret has remained unchanged.\nIf this was undesired, please try again.",
+                                    fontSize = 16.sp
+                                )
+                            }
                         }
                     }
                 }
-
+            }
+            SHOW_CALIBRATION_TUTORIAL -> {
+                BackHandler {
+                    onStatusChange(CONNECTED)
+                }
+                LandscapeColumn {
+                    Row(){
+                        Column(
+                            modifier = Modifier.fillMaxWidth(0.5f)
+                        ) {
+                            Text("Ensure that the robot has no objects closer than 20cm to the turret", fontSize = 22.sp)
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Text("Place your finger in front of the robot along the centre line of the robot", fontSize = 22.sp)
+                            Spacer(modifier = Modifier.height(20.dp))
+                        }
+                        Column(
+                            modifier = Modifier.fillMaxWidth(0.5f)
+                        ){
+                            Image(
+                                painter = painterResource(R.drawable.calibration_demonstration),
+                                contentDescription = "Turret calibration demonstration",
+//                                modifier = Modifier
+//                                    .height(200.dp)
+//                                    .width(267.dp) // 4/3 aspect ratio
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            turretCalibrationCharacteristic?.value = byteArrayOf(BleService.turretCalibrationPacket,1)
+                            bluetoothService?.writeCharacteristic(turretCalibrationCharacteristic)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Magenta),
+                        shape = RoundedCornerShape(5.dp),
+                        modifier = Modifier.padding(10.dp,5.dp)
+                    ) {
+                        Text(text="Begin Turret Calibration", fontSize = 20.sp,color = Color.White,
+                            modifier = Modifier.padding(5.dp))
+                    }
+                }
+            }
+            CALIBRATING_TURRET -> {
+                LandscapeColumn {
+                    Text("Calibrating Turret", fontSize = 40.sp)
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text("Keep the robot still and keep your finger in the correct position", fontSize = 24.sp)
+                }
             }
             CONNECTING -> {
                 LandscapeColumn {

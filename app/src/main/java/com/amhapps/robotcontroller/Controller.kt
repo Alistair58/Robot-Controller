@@ -1,6 +1,7 @@
 package com.amhapps.robotcontroller
 
 import android.bluetooth.BluetoothGattCharacteristic
+import android.content.Intent
 import android.util.MutableInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.DragInteraction
@@ -48,7 +49,8 @@ class Controller(private val bluetoothService: BleService?,
                  private val leftThrottle: MutableState<Int>,
                  private val rightThrottle: MutableState<Int>,
                  private val onLeftThrottleChange: (Int) -> Unit,
-                 private val onRightThrottleChange: (Int) -> Unit) {
+                 private val onRightThrottleChange: (Int) -> Unit,
+                 private val onStatusChange: (Int) -> Unit){
     private val controllerDelay = 50L
     @Composable
     fun RobotControls(){
@@ -68,6 +70,7 @@ class Controller(private val bluetoothService: BleService?,
                 LandscapeColumn(){
                     Row {
                         AutoModeButton()
+                        TurretCalibrationButton()
                         DisconnectButton(bluetoothService)
                     }
                 }
@@ -154,7 +157,7 @@ class Controller(private val bluetoothService: BleService?,
         Button(
             onClick = {
                 if(null != autoModeCharacteristic){
-                    autoModeCharacteristic.value = byteArrayOf(0xaa.toByte(),1)
+                    autoModeCharacteristic.value = byteArrayOf(BleService.autoModePacket,1)
                     bluetoothService?.writeCharacteristic(autoModeCharacteristic)
                 }
             },
@@ -167,6 +170,21 @@ class Controller(private val bluetoothService: BleService?,
         }
     }
 
+    @Composable
+    private fun TurretCalibrationButton(){
+        Button(
+            onClick = {
+                onStatusChange(MainActivity.SHOW_CALIBRATION_TUTORIAL)
+                println("Showing calibration tutorial")
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Magenta),
+            shape = RoundedCornerShape(5.dp),
+            modifier = Modifier.padding(10.dp,5.dp)
+        ) {
+            Text(text="Calibrate Turret", fontSize = 20.sp,color = Color.White,
+                modifier = Modifier.padding(5.dp))
+        }
+    }
 
 
 }

@@ -32,8 +32,9 @@ class BleService() : Service() {
     private var connectionState = STATE_DISCONNECTED
     val REQUEST_ENABLE_BT = 570
     private val autoModeCharacteristicUUID = "94f493cc-c579-41c2-87ac-e12c02455864"
-    private val stuckCharacteristicUUID = "94f493cf-c579-41c2-87ac-e12c02455864"
-    private val robotStuckPacket = 0xAF.toByte()
+    private val stuckCharacteristicUUID = "94f493ce-c579-41c2-87ac-e12c02455864"
+    private val turretCalibrationCharacteristicUUID = "94f493d0-c579-41c2-87ac-e12c02455864"
+
 
     private val bleGattCallback = object : BluetoothGattCallback(){
         @SuppressLint("MissingPermission")
@@ -72,17 +73,20 @@ class BleService() : Service() {
         ) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if(characteristic.uuid.toString()==autoModeCharacteristicUUID){
-                    println("Characteristic value: ${characteristic.value.contentToString()}")
                     if(characteristic.value.size>1 && characteristic.value[1]==0.toByte()){
                         //Disabled auto mode
                         broadcastUpdate(ACTION_GATT_MANUAL_MODE_CONFIRMED)
-
                     }
                     else if(characteristic.value.size>1 && characteristic.value[1]==1.toByte()){
                         println("Sending auto mode confirmed")
                         broadcastUpdate(ACTION_GATT_AUTO_MODE_CONFIRMED)
                     }
-
+                }
+                else if(characteristic.uuid.toString()==turretCalibrationCharacteristicUUID){
+                    if(characteristic.value.size>1 && characteristic.value[1]==1.toByte()) {
+                        println("Calibrating turret")
+                        broadcastUpdate(ACTION_GATT_TURRET_CALIBRATION)
+                    }
                 }
                 // You can check characteristic.value here if needed
             } else {
@@ -104,6 +108,21 @@ class BleService() : Service() {
 
                 }
             }
+            else if(characteristic.uuid.toString()==turretCalibrationCharacteristicUUID){
+                if(characteristic.value.size>1 &&
+                    characteristic.value[0]==turretCalibrationPacket &&
+                    characteristic.value[1]==2.toByte()){
+                    println("Calibrated turret successfully")
+                    broadcastUpdate(ACTION_GATT_TURRET_CALIBRATED)
+                }
+                else if(characteristic.value.size>1 &&
+                    characteristic.value[0]==turretCalibrationPacket &&
+                    characteristic.value[1]==3.toByte()){
+                    println("Could not calibrate turret")
+                    broadcastUpdate(ACTION_GATT_TURRET_CALIBRATION_FAILURE)
+                }
+            }
+
 
         }
     }
@@ -122,10 +141,20 @@ class BleService() : Service() {
             "com.amhapps.robotcontroller.ACTION_GATT_MANUAL_MODE_CONFIRMED"
         const val ACTION_GATT_ROBOT_STUCK =
             "com.amhapps.robotcontroller.ACTION_GATT_ROBOT_STUCK"
+        const val ACTION_GATT_TURRET_CALIBRATION =
+            "com.amhapps.robotcontroller.ACTION_GATT_TURRET_CALIBRATION"
+        const val ACTION_GATT_TURRET_CALIBRATED =
+            "com.amhapps.robotcontroller.ACTION_GATT_TURRET_CALIBRATED"
+        const val ACTION_GATT_TURRET_CALIBRATION_FAILURE =
+            "com.amhapps.robotcontroller.ACTION_GATT_TURRET_CALIBRATION_FAILURE"
+
         private const val STATE_DISCONNECTED = 0
         private const val STATE_CONNECTED = 2
         private const val STATE_TIMEOUT = -1
 
+        const val robotStuckPacket = 0xAF.toByte()
+        const val turretCalibrationPacket = 0xAB.toByte()
+        const val autoModePacket = 0xAA.toByte()
 
     }
 
@@ -276,7 +305,8 @@ class BleService() : Service() {
             }
             gatt.setCharacteristicNotification(characteristic, enabled)
 
-            if (this.stuckCharacteristicUUID == characteristic.uuid.toString()) {
+            if (this.stuckCharacteristicUUID == characteristic.uuid.toString()
+                || this.turretCalibrationCharacteristicUUID == characteristic.uuid.toString()) {
                 val cccd = "00002902-0000-1000-8000-00805f9b34fb"
                 val descriptor = characteristic.getDescriptor(UUID.fromString(cccd))
                 descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
