@@ -71,7 +71,7 @@ class BleService() : Service() {
             characteristic: BluetoothGattCharacteristic,
             status: Int
         ) {
-            if (status == BluetoothGatt.GATT_SUCCESS) {
+            if (status == BluetoothGatt.GATT_SUCCESS){
                 if(characteristic.uuid.toString()==autoModeCharacteristicUUID){
                     if(characteristic.value.size>1 && characteristic.value[1]==0.toByte()){
                         //Disabled auto mode
@@ -111,13 +111,13 @@ class BleService() : Service() {
             else if(characteristic.uuid.toString()==turretCalibrationCharacteristicUUID){
                 if(characteristic.value.size>1 &&
                     characteristic.value[0]==turretCalibrationPacket &&
-                    characteristic.value[1]==2.toByte()){
+                    characteristic.value[1].toInt()==2){
                     println("Calibrated turret successfully")
                     broadcastUpdate(ACTION_GATT_TURRET_CALIBRATED)
                 }
                 else if(characteristic.value.size>1 &&
                     characteristic.value[0]==turretCalibrationPacket &&
-                    characteristic.value[1]==3.toByte()){
+                    characteristic.value[1].toInt()==3){
                     println("Could not calibrate turret")
                     broadcastUpdate(ACTION_GATT_TURRET_CALIBRATION_FAILURE)
                 }
@@ -309,6 +309,7 @@ class BleService() : Service() {
                 || this.turretCalibrationCharacteristicUUID == characteristic.uuid.toString()) {
                 val cccd = "00002902-0000-1000-8000-00805f9b34fb"
                 val descriptor = characteristic.getDescriptor(UUID.fromString(cccd))
+                println("Enabling notifications for: ${characteristic.uuid.toString()}")
                 descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                 gatt.writeDescriptor(descriptor)
             }

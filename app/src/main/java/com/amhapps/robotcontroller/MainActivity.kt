@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -128,6 +129,7 @@ class MainActivity : ComponentActivity() {
                         robotServiceUUID,
                         turretCalibrationCharacteristicUUID
                     )
+                    Thread.sleep(50) //Works?
                     if(turretCalibrationCharacteristic!=null){
                         bluetoothService?.setCharacteristicNotification(turretCalibrationCharacteristic!!,true)
                     }
@@ -261,6 +263,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        unbindService(serviceConnection)
+        super.onDestroy()
+    }
+
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun App(status:Int,motorCharacteristic: BluetoothGattCharacteristic?,autoModeCharacteristic: BluetoothGattCharacteristic?) {
@@ -318,7 +325,8 @@ class MainActivity : ComponentActivity() {
                                     text = "Turret Calibrated Successfully",
                                     color = Color.Green,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 34.sp
+                                    fontSize = 34.sp,
+                                    lineHeight = 40.sp
                                 )
                             }
                         }
@@ -333,7 +341,8 @@ class MainActivity : ComponentActivity() {
                                     text = "Turret Calibration Failed",
                                     color = Color.Red,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 34.sp
+                                    fontSize = 34.sp,
+                                    lineHeight = 40.sp
                                 )
                                 Spacer(modifier = Modifier.height(20.dp))
                                 Text(
@@ -350,25 +359,59 @@ class MainActivity : ComponentActivity() {
                     onStatusChange(CONNECTED)
                 }
                 LandscapeColumn {
-                    Row(){
+                    Row() {
                         Column(
-                            modifier = Modifier.fillMaxWidth(0.5f)
+                            modifier = Modifier.fillMaxWidth(0.3f)
                         ) {
-                            Text("Ensure that the robot has no objects closer than 20cm to the turret", fontSize = 22.sp)
                             Spacer(modifier = Modifier.height(20.dp))
-                            Text("Place your finger in front of the robot along the centre line of the robot", fontSize = 22.sp)
+                            Text(
+                                "Ensure that the robot has no objects closer than 30cm to the turret.",
+                                fontSize = 20.sp
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Text(
+                                "Place the calibration device on the opposite side to which the turret is currently facing"
+                                        + ". This may require flipping the calibration arm.",
+                                fontSize = 20.sp
+                            )
                             Spacer(modifier = Modifier.height(20.dp))
                         }
+                        Spacer(modifier = Modifier.width(20.dp))
                         Column(
-                            modifier = Modifier.fillMaxWidth(0.5f)
-                        ){
-                            Image(
-                                painter = painterResource(R.drawable.calibration_demonstration),
-                                contentDescription = "Turret calibration demonstration",
-//                                modifier = Modifier
-//                                    .height(200.dp)
-//                                    .width(267.dp) // 4/3 aspect ratio
-                            )
+                            modifier = Modifier.fillMaxWidth(0.9f),
+                            //0.9f of the remaining width
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxHeight(0.8f),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(0.33f)
+                                ) {
+                                    Image(
+                                        painter = painterResource(R.drawable.calibration_device),
+                                        contentDescription = "Turret calibration on the left side",
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(20.dp))
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(0.5f)
+                                ) {
+                                    Image(
+                                        painter = painterResource(R.drawable.calibration_left),
+                                        contentDescription = "Turret calibration on the left side",
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(20.dp))
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(1f)
+                                ) {
+                                    Image(
+                                        painter = painterResource(R.drawable.calibration_right),
+                                        contentDescription = "Turret calibration on the right side",
+                                    )
+                                }
+                            }
                         }
                     }
                     Button(
